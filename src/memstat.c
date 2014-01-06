@@ -81,9 +81,9 @@ meminfo *meminfo_for_proc(int pid) {
 
 int main (int argc, char ** argv, char ** env)
 {
-	printf("%d used\n", meminfo_for_proc(2062)->used);
-	return 0;
 	int pid = fork();
+	int sample_rate = 1000 * 500;
+	meminfo *mi = NULL;
 
 	if ( pid == 0 )
 	{
@@ -93,7 +93,10 @@ int main (int argc, char ** argv, char ** env)
 	{
 		// Parent
 		printf("Starting monitoring on process PID=%d\n", pid);
-		wait(NULL);
+		while ((mi = meminfo_for_proc(pid)) != NULL && kill(pid,0) == 0) {
+			printf("%d\n", mi->used);
+			usleep(sample_rate);
+		}
 	}
 
 	return 0;

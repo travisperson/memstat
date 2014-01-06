@@ -75,6 +75,7 @@ meminfo *meminfo_for_proc(int pid) {
 			mi->used = parse_bytes(buf + 7);
 		}
 	}
+	fclose(fi);
 	return mi;
 }
 

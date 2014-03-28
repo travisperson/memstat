@@ -6,6 +6,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#define SAMPLE_DELAY_DEFAULT (1000 * 500)
+
 typedef struct meminfo {
 	int used;
 } meminfo;
@@ -79,25 +81,48 @@ meminfo *meminfo_for_proc(int pid) {
 	return mi;
 }
 
+void monitor_process(int pid) {
+	int sample_delay = 1000 * 500;
+	FILE *out_fi = stdout;
+	meminfo *mi = NULL;
+	char *temp = NULL;
+
+	//Check for user defined sample delay
+	temp = getenv("MEMSTAT_SAMPLE_DELAY");
+	if (temp != NULL) {
+		sample_delay = atoi(temp);
+		if (sample_delay <= 0) {
+			sample_delay = SAMPLE_DELAY_DEFAULT;
+		}
+	}
+
+	//Check for user defined log file
+	temp = getenv("MEMSTAT_LOG_FILE");
+	if (temp != NULL) {
+		out_fi = fopen(temp, "w");
+		if (out_fi == NULL) {
+			out_fi = stdout;
+		}
+	}
+
+	fprintf(out_fi, "Starting monitoring on process PID=%d\n", pid);
+	while ((mi = meminfo_for_proc(pid)) != NULL && kill(pid,0) == 0) {
+		fprintf(out_fi, "%d\n", mi->used);
+		fflush(out_fi);
+		usleep(sample_delay);
+	}
+	fclose(out_fi);
+}
 
 int main (int argc, char ** argv, char ** env)
 {
 	int pid = fork();
-	int sample_rate = 1000 * 500;
-	meminfo *mi = NULL;
 
-	if ( pid == 0 )
-	{
+	if ( pid == 0 ) {
 		execve(*(argv + 1), argv + 1, env);
-	}
-	else
-	{
+	} else {
 		// Parent
-		printf("Starting monitoring on process PID=%d\n", pid);
-		while ((mi = meminfo_for_proc(pid)) != NULL && kill(pid,0) == 0) {
-			printf("%d\n", mi->used);
-			usleep(sample_rate);
-		}
+		monitor_process(pid);
 	}
 
 	return 0;

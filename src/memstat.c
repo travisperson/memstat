@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,8 +11,13 @@
 
 typedef struct meminfo {
 	int used;
+	char state;
 } meminfo;
 
+/* Parse Bytes
+ * Converts from a byte string to an integer number of bytes
+ * Ex: 2134 Kb -> 2185216
+ */
 int parse_bytes(char *s) {
 	int num;
 
@@ -40,6 +46,11 @@ int parse_bytes(char *s) {
 	return num;
 }
 
+/* Read file into buffer
+ * Reads from the given fd into buf until the delim is found
+ * or the file ends
+ * TODO: dont buffer overflow?
+ */
 int read_into_buf(FILE *fd, char *buf, char delim) {
 	char tmp;
 	int i = 0;
@@ -51,13 +62,15 @@ int read_into_buf(FILE *fd, char *buf, char delim) {
 	return !feof(fd);
 }
 
+/* Query the pseudo filesystem /proc for info about the given pid
+ */
 meminfo *meminfo_for_proc(int pid) {
 	meminfo *mi;
 	FILE *fi = NULL;
 	char buf[512];
 	char *statfile;
 
-	mi = malloc(sizeof(meminfo));
+	mi = calloc(1, sizeof(meminfo));
 	if (mi == NULL) {
 		//panic
 		printf("Failed to allocate memory for structure.\n");
@@ -73,8 +86,11 @@ meminfo *meminfo_for_proc(int pid) {
 	}
 
 	while (read_into_buf(fi, buf, '\n')) {
-		if (strncmp(buf,"VmSize:",7) == 0) {
-			mi->used = parse_bytes(buf + 7);
+		if (strncmp(buf,"VmRSS:",6) == 0) {
+			mi->used = parse_bytes(buf + 6);
+		}
+		if (strncmp(buf,"State:", 6) == 0) {
+			sscanf(buf + 6, " %c", &mi->state);
 		}
 	}
 	fclose(fi);
@@ -107,9 +123,15 @@ void monitor_process(int pid) {
 
 	fprintf(out_fi, "Starting monitoring on process PID=%d\n", pid);
 	while ((mi = meminfo_for_proc(pid)) != NULL && kill(pid,0) == 0) {
-		fprintf(out_fi, "%d\n", mi->used);
+		fprintf(out_fi, "time: %ld, ", time(NULL));
+		fprintf(out_fi, "mem:%d\n", mi->used);
 		fflush(out_fi);
 		usleep(sample_delay);
+		if (mi->state == 'Z') {
+			fprintf(out_fi, "Process is zombie, exiting!\n");
+			break;
+		}
+		free(mi);
 	}
 	fclose(out_fi);
 }
@@ -117,11 +139,9 @@ void monitor_process(int pid) {
 int main (int argc, char ** argv, char ** env)
 {
 	int pid = fork();
-
-	if ( pid == 0 ) {
+	if (pid == 0) {
 		execve(*(argv + 1), argv + 1, env);
 	} else {
-		// Parent
 		monitor_process(pid);
 	}
 
